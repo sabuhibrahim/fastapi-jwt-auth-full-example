@@ -37,5 +37,3 @@ networks:
 volumes:
   pgsql:
     driver: local
-  cache:
-    driver: local
