@@ -13,22 +13,22 @@ services:
     networks:
       - default
   
-  backend:
-    container_name: backend
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-    restart: always
-    env_file:
-      - .env
-    ports:
-      - "3000:80"
-    links:
-      - postgres
-    depends_on:
-      - postgres
-    networks:
-      - default
+  # backend:
+  #   container_name: backend
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile
+  #   restart: always
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "3000:80"
+  #   links:
+  #     - postgres
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - default
 
 networks:
   default:

@@ -1,6 +1,7 @@
 import uuid
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from jose import jwt, JWTError
+from fastapi import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import config
@@ -9,13 +10,19 @@ from src.exceptions import AuthFailedException
 from src.models import BlackListToken
 
 
+REFRESH_COOKIE_NAME = "refresh"
+SUB = "sub"
+EXP = "exp"
+IAT = "iat"
+JTI = "jti"
+
+
 def _create_access_token(payload: dict, minutes: int | None = None) -> JwtTokenSchema:
     expire = datetime.utcnow() + timedelta(
         minutes=minutes or config.ACCESS_TOKEN_EXPIRES_MINUTES
     )
 
-    payload["exp"] = expire
-    payload["frs"] = False
+    payload[EXP] = expire
 
     token = JwtTokenSchema(
         token=jwt.encode(payload, config.SECRET_KEY, algorithm=config.ALGORITHM),
@@ -29,8 +36,7 @@ def _create_access_token(payload: dict, minutes: int | None = None) -> JwtTokenS
 def _create_refresh_token(payload: dict) -> JwtTokenSchema:
     expire = datetime.utcnow() + timedelta(minutes=config.REFRESH_TOKEN_EXPIRES_MINUTES)
 
-    payload["exp"] = expire
-    payload["frs"] = True
+    payload[EXP] = expire
 
     token = JwtTokenSchema(
         token=jwt.encode(payload, config.SECRET_KEY, algorithm=config.ALGORITHM),
@@ -42,7 +48,7 @@ def _create_refresh_token(payload: dict) -> JwtTokenSchema:
 
 
 def create_token_pair(user: User) -> TokenPair:
-    payload = {"sub": str(user.id), "name": user.full_name, "jti": str(uuid.uuid4())}
+    payload = {SUB: str(user.id), JTI: str(uuid.uuid4()), IAT: datetime.utcnow()}
 
     return TokenPair(
         access=_create_access_token(payload={**payload}),
@@ -53,9 +59,7 @@ def create_token_pair(user: User) -> TokenPair:
 async def decode_access_token(token: str, db: AsyncSession):
     try:
         payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
-        if payload.get("frs"):
-            raise JWTError("Access token need")
-        black_list_token = await BlackListToken.find_by_id(db=db, id=payload["jti"])
+        black_list_token = await BlackListToken.find_by_id(db=db, id=payload[JTI])
         if black_list_token:
             raise JWTError("Token is blacklisted")
     except JWTError:
@@ -67,16 +71,26 @@ async def decode_access_token(token: str, db: AsyncSession):
 def refresh_token_state(token: str):
     try:
         payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
-        if not payload.get("frs"):
-            raise JWTError("Refresh token need")
     except JWTError as ex:
         print(str(ex))
         raise AuthFailedException()
 
-    return {"access": _create_access_token(payload=payload).token}
+    return {"token": _create_access_token(payload=payload).token}
 
 
 def mail_token(user: User):
     """Return 2 hour lifetime access_token"""
-    payload = {"sub": str(user.id), "name": user.full_name, "jti": str(uuid.uuid4())}
+    payload = {SUB: str(user.id), JTI: str(uuid.uuid4()), IAT: datetime.utcnow()}
     return _create_access_token(payload=payload, minutes=2 * 60).token
+
+
+def add_refresh_token_cookie(response: Response, token: str):
+    exp = datetime.utcnow() + timedelta(minutes=config.REFRESH_TOKEN_EXPIRES_MINUTES)
+    exp.replace(tzinfo=timezone.utc)
+
+    response.set_cookie(
+        key="refresh",
+        value=token,
+        expires=int(exp.timestamp()),
+        httponly=True,
+    )

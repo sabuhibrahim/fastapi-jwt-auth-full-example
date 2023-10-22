@@ -1,7 +1,7 @@
 from typing import Annotated
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Response, Cookie
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,10 @@ from src.core.jwt import (
     refresh_token_state,
     decode_access_token,
     mail_token,
+    add_refresh_token_cookie,
+    SUB,
+    JTI,
+    EXP,
 )
 from src.exceptions import BadRequestException, NotFoundException, ForbiddenException
 from src.tasks import (
@@ -61,6 +65,7 @@ async def register(
 @router.post("/login")
 async def login(
     data: schemas.UserLogin,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     user = await models.User.authenticate(
@@ -77,18 +82,23 @@ async def login(
 
     token_pair = create_token_pair(user=user)
 
-    return {"access": token_pair.access.token, "refresh": token_pair.refresh.token}
+    add_refresh_token_cookie(response=response, token=token_pair.refresh.token)
+
+    return {"token": token_pair.access.token}
 
 
 @router.post("/refresh")
-async def refresh(data: schemas.RefreshToken):
-    return refresh_token_state(data.refresh)
+async def refresh(refresh: Annotated[str | None, Cookie()] = None):
+    print(refresh)
+    if not refresh:
+        raise BadRequestException(detail="refresh token required")
+    return refresh_token_state(token=refresh)
 
 
 @router.get("/verify", response_model=schemas.SuccessResponseScheme)
 async def verify(token: str, db: AsyncSession = Depends(get_db)):
     payload = await decode_access_token(token=token, db=db)
-    user = await models.User.find_by_id(db=db, id=payload["sub"])
+    user = await models.User.find_by_id(db=db, id=payload[SUB])
     if not user:
         raise NotFoundException(detail="User not found")
 
@@ -104,7 +114,7 @@ async def logout(
 ):
     payload = await decode_access_token(token=token, db=db)
     black_listed = models.BlackListToken(
-        id=payload["jti"], expire=datetime.utcfromtimestamp(payload["exp"])
+        id=payload[JTI], expire=datetime.utcfromtimestamp(payload[EXP])
     )
     await black_listed.save(db=db)
 
@@ -138,7 +148,7 @@ async def password_reset_token(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await decode_access_token(token=token, db=db)
-    user = await models.User.find_by_id(db=db, id=payload["sub"])
+    user = await models.User.find_by_id(db=db, id=payload[SUB])
     if not user:
         raise NotFoundException(detail="User not found")
 
@@ -155,7 +165,7 @@ async def password_update(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await decode_access_token(token=token, db=db)
-    user = await models.User.find_by_id(db=db, id=payload["sub"])
+    user = await models.User.find_by_id(db=db, id=payload[SUB])
     if not user:
         raise NotFoundException(detail="User not found")
 
@@ -177,7 +187,7 @@ async def articles(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await decode_access_token(token=token, db=db)
-    user = await models.User.find_by_id(db=db, id=payload["sub"])
+    user = await models.User.find_by_id(db=db, id=payload[SUB])
     if not user:
         raise NotFoundException(detail="User not found")
 
@@ -193,7 +203,7 @@ async def articles(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await decode_access_token(token=token, db=db)
-    user = await models.User.find_by_id(db=db, id=payload["sub"])
+    user = await models.User.find_by_id(db=db, id=payload[SUB])
     if not user:
         raise NotFoundException(detail="User not found")
 
