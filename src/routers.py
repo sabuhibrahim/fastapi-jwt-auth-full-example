@@ -197,7 +197,7 @@ async def articles(
 
 
 @router.post("/articles", response_model=schemas.SuccessResponseScheme, status_code=201)
-async def articles(
+async def article_create(
     token: Annotated[str, Depends(oauth2_scheme)],
     data: schemas.ArticleCreateSchema,
     db: AsyncSession = Depends(get_db),
