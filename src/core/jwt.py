@@ -3,6 +3,7 @@ from datetime import timedelta, datetime, timezone
 from jose import jwt, JWTError
 from fastapi import Response
 from sqlalchemy.ext.asyncio import AsyncSession
+import sys
 
 from . import config
 from src.schemas import User, TokenPair, JwtTokenSchema
@@ -16,9 +17,17 @@ EXP = "exp"
 IAT = "iat"
 JTI = "jti"
 
+def _get_utc_now():
+    if sys.version_info >= (3, 2):
+        # For Python 3.2 and later
+        current_utc_time = datetime.now(timezone.utc)
+    else:
+        # For older versions of Python
+        current_utc_time = datetime.utcnow()
+    return current_utc_time
 
 def _create_access_token(payload: dict, minutes: int | None = None) -> JwtTokenSchema:
-    expire = datetime.utcnow() + timedelta(
+    expire = _get_utc_now() + timedelta(
         minutes=minutes or config.ACCESS_TOKEN_EXPIRES_MINUTES
     )
 
@@ -34,7 +43,7 @@ def _create_access_token(payload: dict, minutes: int | None = None) -> JwtTokenS
 
 
 def _create_refresh_token(payload: dict) -> JwtTokenSchema:
-    expire = datetime.utcnow() + timedelta(minutes=config.REFRESH_TOKEN_EXPIRES_MINUTES)
+    expire = _get_utc_now() + timedelta(minutes=config.REFRESH_TOKEN_EXPIRES_MINUTES)
 
     payload[EXP] = expire
 
@@ -48,7 +57,7 @@ def _create_refresh_token(payload: dict) -> JwtTokenSchema:
 
 
 def create_token_pair(user: User) -> TokenPair:
-    payload = {SUB: str(user.id), JTI: str(uuid.uuid4()), IAT: datetime.utcnow()}
+    payload = {SUB: str(user.id), JTI: str(uuid.uuid4()), IAT: _get_utc_now()}
 
     return TokenPair(
         access=_create_access_token(payload={**payload}),
@@ -80,12 +89,12 @@ def refresh_token_state(token: str):
 
 def mail_token(user: User):
     """Return 2 hour lifetime access_token"""
-    payload = {SUB: str(user.id), JTI: str(uuid.uuid4()), IAT: datetime.utcnow()}
+    payload = {SUB: str(user.id), JTI: str(uuid.uuid4()), IAT: _get_utc_now()}
     return _create_access_token(payload=payload, minutes=2 * 60).token
 
 
 def add_refresh_token_cookie(response: Response, token: str):
-    exp = datetime.utcnow() + timedelta(minutes=config.REFRESH_TOKEN_EXPIRES_MINUTES)
+    exp = _get_utc_now() + timedelta(minutes=config.REFRESH_TOKEN_EXPIRES_MINUTES)
     exp.replace(tzinfo=timezone.utc)
 
     response.set_cookie(
