@@ -3,12 +3,12 @@ from datetime import timedelta, datetime, timezone
 from jose import jwt, JWTError
 from fastapi import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-import sys
 
 from . import config
 from src.schemas import User, TokenPair, JwtTokenSchema
 from src.exceptions import AuthFailedException
 from src.models import BlackListToken
+from sys import version_info
 
 
 REFRESH_COOKIE_NAME = "refresh"
@@ -18,7 +18,7 @@ IAT = "iat"
 JTI = "jti"
 
 def _get_utc_now():
-    if sys.version_info >= (3, 2):
+    if version_info >= (3, 2):
         # For Python 3.2 and later
         current_utc_time = datetime.now(timezone.utc)
     else:
